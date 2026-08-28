@@ -16,6 +16,8 @@ import { ExpensesPage } from './pages/expenses/ExpensesPage';
 import { CustomersPage } from './pages/customers/CustomersPage';
 import { ReportsPage } from './pages/reports/ReportsPage';
 import { UsersPage } from './pages/users/UsersPage';
+import { ActivityPage } from './pages/activity/ActivityPage';
+import { AccountsPage } from './pages/accounts/AccountsPage';
 
 export default function App() {
   return (
@@ -48,6 +50,8 @@ export default function App() {
                   <Route path="/suppliers" element={<SuppliersPage />} />
                   <Route path="/expenses" element={<ExpensesPage />} />
                   <Route path="/reports" element={<ReportsPage />} />
+                  <Route path="/accounts" element={<AccountsPage />} />
+                  <Route path="/activity" element={<ActivityPage />} />
                 </Route>
 
                 <Route element={<RequireRole roles={['ADMIN', 'MANAGER', 'STOREKEEPER']} />}>

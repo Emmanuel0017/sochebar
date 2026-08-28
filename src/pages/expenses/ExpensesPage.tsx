@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, Search } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -18,6 +18,7 @@ export function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [form, setForm] = useState({ categoryId: '', description: '', amount: '', paymentMethod: 'CASH' as PaymentMethod, reference: '' });
@@ -34,6 +35,14 @@ export function ExpensesPage() {
   }
 
   useEffect(load, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return expenses;
+    return expenses.filter(
+      (e) => e.description.toLowerCase().includes(q) || e.category?.name.toLowerCase().includes(q),
+    );
+  }, [expenses, search]);
 
   async function submit() {
     try {
@@ -69,8 +78,13 @@ export function ExpensesPage() {
         </Button>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-paper-dim" />
+        <Input placeholder="Search expenses…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+      </div>
+
       <Card>
-        {expenses.map((e) => (
+        {filtered.map((e) => (
           <div key={e.id} className="ledger-row flex items-center justify-between px-4 py-3">
             <div>
               <div className="text-sm text-paper">{e.description}</div>
@@ -81,7 +95,11 @@ export function ExpensesPage() {
             <span className="font-mono text-sm text-copper">{formatMWK(e.amount)}</span>
           </div>
         ))}
-        {expenses.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No expenses recorded.</p>}
+        {filtered.length === 0 && (
+          <p className="text-sm text-paper-dim text-center py-8">
+            {expenses.length === 0 ? 'No expenses recorded.' : 'No expenses match your search.'}
+          </p>
+        )}
       </Card>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="New expense">

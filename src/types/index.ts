@@ -32,6 +32,7 @@ export interface Product {
   barcode?: string | null;
   description?: string | null;
   trackInventory: boolean;
+  tracksEmptyBottles: boolean;
   isActive: boolean;
   units: ProductUnit[];
   prices?: ProductPrice[];
@@ -111,8 +112,8 @@ export interface SaleItem {
 
 export interface Purchase {
   id: string;
-  supplierId: string;
-  supplier?: Supplier;
+  supplierId?: string | null;
+  supplier?: Supplier | null;
   invoiceNumber?: string | null;
   purchaseDate: string;
   subtotal: string;
@@ -156,4 +157,24 @@ export interface StockSummaryEntry {
   baseUnit: string;
   stock: number;
   status?: 'OUT_OF_STOCK' | 'LOW' | 'OK';
+}
+
+export type EmptyBottleTransactionType = 'COLLECTED' | 'RETURNED_TO_SUPPLIER' | 'BROKEN' | 'ADJUSTMENT';
+
+export interface EmptyBottleSummaryEntry {
+  productId: string;
+  name: string;
+  count: number;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  userId?: string | null;
+  user?: { id: string; name: string; username: string } | null;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  oldValues?: unknown;
+  newValues?: unknown;
+  createdAt: string;
 }

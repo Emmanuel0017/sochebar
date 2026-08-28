@@ -10,7 +10,9 @@ import {
   CreditCard,
   Users,
   FileBarChart,
+  Landmark,
   UserCog,
+  History,
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -35,6 +37,8 @@ const NAV: NavItem[] = [
   { to: '/expenses', label: 'Expenses', icon: CreditCard, roles: ['ADMIN', 'MANAGER'] },
   { to: '/customers', label: 'Customers', icon: Users },
   { to: '/reports', label: 'Reports', icon: FileBarChart, roles: ['ADMIN', 'MANAGER'] },
+  { to: '/accounts', label: 'Accounts', icon: Landmark, roles: ['ADMIN', 'MANAGER'] },
+  { to: '/activity', label: 'Activity', icon: History, roles: ['ADMIN', 'MANAGER'] },
   { to: '/users', label: 'Users', icon: UserCog, roles: ['ADMIN'] },
 ];
 

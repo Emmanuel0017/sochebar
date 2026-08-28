@@ -7,7 +7,7 @@ import { Input, Select, Label } from '../../components/Input';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../lib/errors';
-import { formatMWK } from '../../lib/format';
+import { formatMWK, localDateStr } from '../../lib/format';
 import type { Customer, PaymentMethod, Product } from '../../types';
 
 interface CartLine {
@@ -36,6 +36,8 @@ export function PosPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerId, setCustomerId] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [saleDate, setSaleDate] = useState(() => localDateStr());
+  const today = localDateStr();
 
   useEffect(() => {
     api.get('/products', { params: { isActive: true } }).then((r) => setProducts(r.data));
@@ -120,11 +122,13 @@ export function PosPage() {
         })),
         payments: payments.filter((p) => p.amount > 0),
         customerId: payments.some((p) => p.paymentMethod === 'CREDIT' && p.amount > 0) ? customerId : undefined,
+        saleDate: saleDate !== today ? saleDate : undefined,
       });
-      push('Sale completed');
+      push(saleDate !== today ? `Backdated sale recorded for ${saleDate}` : 'Sale completed');
       setCart([]);
       setCheckoutOpen(false);
       setCustomerId('');
+      setSaleDate(today);
     } catch (err) {
       push(errorMessage(err), 'error');
     } finally {
@@ -223,6 +227,17 @@ export function PosPage() {
           <div className="flex items-center justify-between">
             <span className="text-sm text-paper-dim">Amount due</span>
             <span className="font-mono text-xl text-paper">{formatMWK(total)}</span>
+          </div>
+
+          <div>
+            <Label>Sale date</Label>
+            <Input type="date" value={saleDate} max={today} onChange={(e) => setSaleDate(e.target.value)} />
+            {saleDate !== today && (
+              <p className="text-xs text-brass bg-brass/10 border border-brass/30 rounded-md px-3 py-2 mt-2">
+                Recording this as a past sale for {saleDate}. It won't be added to today's open cash session — only
+                to that day's records and reports.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Search } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -10,7 +11,7 @@ import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../lib/errors';
 import type { Product, StockSummaryEntry } from '../../types';
 
-const TABS = ['Stock levels', 'Adjustments', 'Wastage'] as const;
+const TABS = ['Stock levels', 'Adjustments', 'Wastage', 'Empty bottles'] as const;
 type Tab = (typeof TABS)[number];
 
 export function InventoryPage() {
@@ -35,6 +36,7 @@ export function InventoryPage() {
       {tab === 'Stock levels' && <StockLevels />}
       {tab === 'Adjustments' && <Adjustments />}
       {tab === 'Wastage' && <Wastage />}
+      {tab === 'Empty bottles' && <EmptyBottles />}
     </div>
   );
 }
@@ -42,6 +44,7 @@ export function InventoryPage() {
 function StockLevels() {
   const [stock, setStock] = useState<StockSummaryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     api.get('/dashboard/stock-alerts').then((r) => {
@@ -50,25 +53,41 @@ function StockLevels() {
     });
   }, []);
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return stock;
+    return stock.filter((s) => s.name.toLowerCase().includes(q));
+  }, [stock, search]);
+
   if (loading) return <PageLoader />;
 
   return (
-    <Card>
-      {stock.map((s) => (
-        <div key={s.productId} className="ledger-row flex items-center justify-between px-4 py-3">
-          <span className="text-sm text-paper">{s.name}</span>
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-sm text-paper-dim">
-              {s.stock} {s.baseUnit}
-            </span>
-            <Badge tone={s.status === 'OUT_OF_STOCK' ? 'danger' : s.status === 'LOW' ? 'warn' : 'ok'}>
-              {s.status === 'OUT_OF_STOCK' ? 'Out of stock' : s.status === 'LOW' ? 'Low' : 'OK'}
-            </Badge>
+    <div className="space-y-4">
+      <div className="relative max-w-sm">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-paper-dim" />
+        <Input placeholder="Search products…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+      </div>
+      <Card>
+        {filtered.map((s) => (
+          <div key={s.productId} className="ledger-row flex items-center justify-between px-4 py-3">
+            <span className="text-sm text-paper">{s.name}</span>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-sm text-paper-dim">
+                {s.stock} {s.baseUnit}
+              </span>
+              <Badge tone={s.status === 'OUT_OF_STOCK' ? 'danger' : s.status === 'LOW' ? 'warn' : 'ok'}>
+                {s.status === 'OUT_OF_STOCK' ? 'Out of stock' : s.status === 'LOW' ? 'Low' : 'OK'}
+              </Badge>
+            </div>
           </div>
-        </div>
-      ))}
-      {stock.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No tracked products.</p>}
-    </Card>
+        ))}
+        {filtered.length === 0 && (
+          <p className="text-sm text-paper-dim text-center py-8">
+            {stock.length === 0 ? 'No tracked products.' : 'No products match your search.'}
+          </p>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -298,6 +317,111 @@ function Wastage() {
             <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
           <Button className="w-full" onClick={submit} disabled={!form.productId || !form.unitId || !form.quantity}>
+            Submit
+          </Button>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+const EMPTY_BOTTLE_TYPES = ['COLLECTED', 'RETURNED_TO_SUPPLIER', 'BROKEN', 'ADJUSTMENT'] as const;
+
+function EmptyBottles() {
+  const { push } = useToast();
+  const [rows, setRows] = useState<{ productId: string; name: string; count: number }[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState({ productId: '', transactionType: 'COLLECTED' as (typeof EMPTY_BOTTLE_TYPES)[number], quantity: '', notes: '' });
+
+  function load() {
+    setLoading(true);
+    Promise.all([api.get('/empty-bottles'), api.get('/products')])
+      .then(([r, p]) => {
+        setRows(r.data);
+        setProducts(p.data.filter((prod: Product) => prod.tracksEmptyBottles));
+      })
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(load, []);
+
+  async function submit() {
+    try {
+      await api.post('/empty-bottles', {
+        productId: form.productId,
+        transactionType: form.transactionType,
+        quantity: Number(form.quantity),
+        notes: form.notes || undefined,
+      });
+      push('Empty bottle transaction recorded');
+      setModalOpen(false);
+      setForm({ productId: '', transactionType: 'COLLECTED', quantity: '', notes: '' });
+      load();
+    } catch (err) {
+      push(errorMessage(err), 'error');
+    }
+  }
+
+  if (loading) return <PageLoader />;
+
+  return (
+    <div className="space-y-4">
+      {products.length === 0 && (
+        <p className="text-sm text-paper-dim bg-ink-raised border border-panel-border rounded-md px-4 py-3">
+          No products are set to track empty bottles yet. Enable "Track empty bottles" when editing a product on the
+          Products page.
+        </p>
+      )}
+      <div className="flex justify-end">
+        <Button onClick={() => setModalOpen(true)} disabled={products.length === 0}>
+          Log empty bottles
+        </Button>
+      </div>
+      <Card>
+        {rows.map((r) => (
+          <div key={r.productId} className="ledger-row flex items-center justify-between px-4 py-3">
+            <span className="text-sm text-paper">{r.name}</span>
+            <span className="font-mono text-sm text-paper-dim">{r.count} on hand</span>
+          </div>
+        ))}
+        {rows.length === 0 && products.length > 0 && (
+          <p className="text-sm text-paper-dim text-center py-8">No empty bottle activity recorded yet.</p>
+        )}
+      </Card>
+
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Log empty bottles">
+        <div className="space-y-3">
+          <div>
+            <Label>Product</Label>
+            <Select value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })}>
+              <option value="">Select product…</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label>Type</Label>
+            <Select value={form.transactionType} onChange={(e) => setForm({ ...form, transactionType: e.target.value as any })}>
+              <option value="COLLECTED">Collected (empties came back to the bar)</option>
+              <option value="RETURNED_TO_SUPPLIER">Returned to supplier (for deposit)</option>
+              <option value="BROKEN">Broken</option>
+              <option value="ADJUSTMENT">Adjustment (recount — enter signed difference)</option>
+            </Select>
+          </div>
+          <div>
+            <Label>{form.transactionType === 'ADJUSTMENT' ? 'Difference (can be negative)' : 'Quantity'}</Label>
+            <Input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
+          </div>
+          <div>
+            <Label>Notes</Label>
+            <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          </div>
+          <Button className="w-full" onClick={submit} disabled={!form.productId || !form.quantity}>
             Submit
           </Button>
         </div>

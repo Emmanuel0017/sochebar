@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, Search } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -16,6 +16,7 @@ export function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({ name: '', phone: '', email: '', address: '' });
 
@@ -32,6 +33,14 @@ export function SuppliersPage() {
   }
 
   useEffect(load, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return suppliers;
+    return suppliers.filter(
+      (s) => s.name.toLowerCase().includes(q) || s.phone?.toLowerCase().includes(q) || s.email?.toLowerCase().includes(q),
+    );
+  }, [suppliers, search]);
 
   async function createSupplier() {
     try {
@@ -58,8 +67,13 @@ export function SuppliersPage() {
         </Button>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-paper-dim" />
+        <Input placeholder="Search suppliers…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+      </div>
+
       <Card>
-        {suppliers.map((s) => (
+        {filtered.map((s) => (
           <div key={s.id} className="ledger-row flex items-center justify-between px-4 py-3">
             <div>
               <div className="text-sm text-paper">{s.name}</div>
@@ -73,7 +87,11 @@ export function SuppliersPage() {
             </div>
           </div>
         ))}
-        {suppliers.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No suppliers yet.</p>}
+        {filtered.length === 0 && (
+          <p className="text-sm text-paper-dim text-center py-8">
+            {suppliers.length === 0 ? 'No suppliers yet.' : 'No suppliers match your search.'}
+          </p>
+        )}
       </Card>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="New supplier">

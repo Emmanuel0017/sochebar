@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, Search, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -25,6 +25,7 @@ export function PurchasesPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [supplierId, setSupplierId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -44,6 +45,17 @@ export function PurchasesPage() {
 
   useEffect(load, []);
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return purchases;
+    return purchases.filter(
+      (p) =>
+        (p.supplier?.name ?? 'no supplier').toLowerCase().includes(q) ||
+        p.invoiceNumber?.toLowerCase().includes(q) ||
+        p.items?.some((it) => it.product?.name?.toLowerCase().includes(q)),
+    );
+  }, [purchases, search]);
+
   function updateItem(idx: number, patch: Partial<ItemDraft>) {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
@@ -57,7 +69,7 @@ export function PurchasesPage() {
   async function submit() {
     try {
       await api.post('/purchases', {
-        supplierId,
+        supplierId: supplierId || undefined,
         invoiceNumber: invoiceNumber || undefined,
         items: items
           .filter((it) => it.productId && it.unitId && it.quantity && it.unitCost)
@@ -94,13 +106,23 @@ export function PurchasesPage() {
         </Button>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-paper-dim" />
+        <Input
+          placeholder="Search supplier, invoice, or product…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
       <Card>
-        {purchases.map((p) => (
+        {filtered.map((p) => (
           <div key={p.id} className="ledger-row flex items-center justify-between px-4 py-3">
             <div>
-              <div className="text-sm text-paper">{p.supplier?.name}</div>
+              <div className="text-sm text-paper">{p.supplier?.name ?? 'No supplier'}</div>
               <div className="text-xs text-paper-dim">
-                {p.invoiceNumber ?? '—'} · {formatDate(p.purchaseDate)} · {p.items?.length ?? 0} items
+                {p.invoiceNumber ?? 'No invoice #'} · {formatDate(p.purchaseDate)} · {p.items?.length ?? 0} items
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -111,16 +133,20 @@ export function PurchasesPage() {
             </div>
           </div>
         ))}
-        {purchases.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No purchases yet.</p>}
+        {filtered.length === 0 && (
+          <p className="text-sm text-paper-dim text-center py-8">
+            {purchases.length === 0 ? 'No purchases yet.' : 'No purchases match your search.'}
+          </p>
+        )}
       </Card>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Receive stock" wide>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Supplier</Label>
+              <Label>Supplier (optional)</Label>
               <Select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-                <option value="">Select supplier…</option>
+                <option value="">No supplier / one-off purchase</option>
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -129,10 +155,17 @@ export function PurchasesPage() {
               </Select>
             </div>
             <div>
-              <Label>Invoice number</Label>
+              <Label>Invoice number (optional)</Label>
               <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
             </div>
           </div>
+
+          {!supplierId && (
+            <p className="text-xs text-paper-dim bg-ink-raised border border-panel-border rounded-md px-3 py-2">
+              No supplier selected — this purchase will be recorded as paid in full immediately, since there's no
+              supplier account to track a balance against.
+            </p>
+          )}
 
           <div>
             <Label>Items</Label>
@@ -174,17 +207,19 @@ export function PurchasesPage() {
             </button>
           </div>
 
-          <div>
-            <Label>Amount paid now (optional)</Label>
-            <Input type="number" value={amountPaidNow} onChange={(e) => setAmountPaidNow(e.target.value)} />
-          </div>
+          {supplierId && (
+            <div>
+              <Label>Amount paid now (optional)</Label>
+              <Input type="number" value={amountPaidNow} onChange={(e) => setAmountPaidNow(e.target.value)} />
+            </div>
+          )}
 
           <div className="flex items-center justify-between pt-2 border-t border-panel-border">
             <span className="text-sm text-paper-dim">Total</span>
             <span className="font-mono text-xl text-brass">{formatMWK(total)}</span>
           </div>
 
-          <Button className="w-full" onClick={submit} disabled={!supplierId || total === 0}>
+          <Button className="w-full" onClick={submit} disabled={total === 0}>
             Receive stock
           </Button>
         </div>

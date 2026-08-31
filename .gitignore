@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment variables — never commit real secrets/connection strings
+.env
+.env.local
+.env.*.local
+sochebar.zip

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, ChevronDown, ChevronUp, Search, Pencil, Trash2, Archive } from 'lucide-react';
+import { Plus, ChevronDown, ChevronUp, Search, Pencil, Trash2, Archive, RotateCcw } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -10,10 +10,24 @@ import { PageLoader } from '../../components/Spinner';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../lib/errors';
 import { formatMWK } from '../../lib/format';
+import { useAuth } from '../../context/AuthContext';
 import type { Category, Product, ProductUnit } from '../../types';
+
+// The current base/normal price for a product, shown right in the list so
+// no one has to expand a row just to see what something sells for. Falls
+// back to whichever active price comes first if there's no plain NORMAL one
+// (e.g. a product only has a WHOLESALE price configured).
+function currentPrice(p: Product): { amount: number; unitName?: string } | null {
+  const prices = p.prices ?? [];
+  if (prices.length === 0) return null;
+  const normal = prices.find((pr) => pr.priceType === 'NORMAL') ?? prices[0];
+  return { amount: Number(normal.price), unitName: normal.unit?.name };
+}
 
 export function ProductsPage() {
   const { push } = useToast();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +42,12 @@ export function ProductsPage() {
     barcode: '',
     tracksEmptyBottles: false,
   });
+
+  // Deactivate / permanently delete both need a reason from whoever's doing
+  // it, so one small modal handles both - `mode` picks which endpoint fires.
+  const [reasonTarget, setReasonTarget] = useState<{ product: Product; mode: 'DEACTIVATE' | 'DELETE' } | null>(null);
+  const [reason, setReason] = useState('');
+  const [actionSubmitting, setActionSubmitting] = useState(false);
 
   function load() {
     setLoading(true);
@@ -94,14 +114,39 @@ export function ProductsPage() {
     }
   }
 
-  async function deactivateProduct(p: Product) {
-    if (!confirm(`Deactivate ${p.name}? It will be hidden from the POS and product lists, but its sales/purchase history stays intact.`)) return;
+  async function reactivateProduct(p: Product) {
+    if (!confirm(`Reactivate ${p.name}?`)) return;
     try {
-      await api.delete(`/products/${p.id}`);
-      push('Product deactivated');
+      await api.post(`/products/${p.id}/reactivate`);
+      push('Product reactivated');
       load();
     } catch (err) {
       push(errorMessage(err), 'error');
+    }
+  }
+
+  function openReasonModal(product: Product, mode: 'DEACTIVATE' | 'DELETE') {
+    setReasonTarget({ product, mode });
+    setReason('');
+  }
+
+  async function submitReasonAction() {
+    if (!reasonTarget || !reason.trim()) return;
+    setActionSubmitting(true);
+    try {
+      if (reasonTarget.mode === 'DEACTIVATE') {
+        await api.post(`/products/${reasonTarget.product.id}/deactivate`, { reason });
+        push('Product deactivated');
+      } else {
+        await api.delete(`/products/${reasonTarget.product.id}`, { data: { reason } });
+        push('Product permanently deleted');
+      }
+      setReasonTarget(null);
+      load();
+    } catch (err) {
+      push(errorMessage(err), 'error');
+    } finally {
+      setActionSubmitting(false);
     }
   }
 
@@ -129,42 +174,112 @@ export function ProductsPage() {
       </div>
 
       <Card>
-        {filtered.map((p) => (
-          <div key={p.id} className="ledger-row">
-            <div className="w-full flex items-center justify-between px-4 py-3">
-              <button className="flex-1 text-left" onClick={() => setExpanded(expanded === p.id ? null : p.id)}>
-                <div className="text-sm text-paper flex items-center gap-2">
-                  {p.name}
-                  {!p.isActive && <Badge tone="neutral">Inactive</Badge>}
-                  {p.tracksEmptyBottles && <Badge tone="warn">Empties</Badge>}
-                </div>
-                <div className="text-xs text-paper-dim">
-                  {p.category?.name ?? 'Uncategorized'} {p.sku ? `· ${p.sku}` : ''}
-                </div>
-              </button>
-              <div className="flex items-center gap-1">
-                <button className="p-1.5 text-paper-dim hover:text-brass" onClick={() => openEdit(p)} title="Edit">
-                  <Pencil size={14} />
+        {filtered.map((p) => {
+          const price = currentPrice(p);
+          return (
+            <div key={p.id} className="ledger-row">
+              <div className="w-full flex items-center justify-between px-4 py-3">
+                <button className="flex-1 text-left" onClick={() => setExpanded(expanded === p.id ? null : p.id)}>
+                  <div className="text-sm text-paper flex items-center gap-2">
+                    {p.name}
+                    {!p.isActive && <Badge tone="neutral">Inactive</Badge>}
+                    {p.tracksEmptyBottles && <Badge tone="warn">Empties</Badge>}
+                  </div>
+                  <div className="text-xs text-paper-dim">
+                    {p.category?.name ?? 'Uncategorized'} {p.sku ? `· ${p.sku}` : ''}
+                  </div>
                 </button>
-                {p.isActive && (
-                  <button className="p-1.5 text-paper-dim hover:text-copper" onClick={() => deactivateProduct(p)} title="Deactivate">
-                    <Archive size={14} />
-                  </button>
-                )}
-                <button onClick={() => setExpanded(expanded === p.id ? null : p.id)} className="p-1.5 text-paper-dim">
-                  {expanded === p.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                </button>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-sm text-brass shrink-0">
+                    {price ? `${formatMWK(price.amount)}${price.unitName ? ` / ${price.unitName}` : ''}` : '— no price set'}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button className="p-1.5 text-paper-dim hover:text-brass" onClick={() => openEdit(p)} title="Edit">
+                      <Pencil size={14} />
+                    </button>
+                    {p.isActive ? (
+                      <button
+                        className="p-1.5 text-paper-dim hover:text-copper"
+                        onClick={() => openReasonModal(p, 'DEACTIVATE')}
+                        title="Deactivate"
+                      >
+                        <Archive size={14} />
+                      </button>
+                    ) : (
+                      <button
+                        className="p-1.5 text-paper-dim hover:text-ledger"
+                        onClick={() => reactivateProduct(p)}
+                        title="Reactivate"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        className="p-1.5 text-paper-dim hover:text-copper"
+                        onClick={() => openReasonModal(p, 'DELETE')}
+                        title="Permanently delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                    <button onClick={() => setExpanded(expanded === p.id ? null : p.id)} className="p-1.5 text-paper-dim">
+                      {expanded === p.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </button>
+                  </div>
+                </div>
               </div>
+              {expanded === p.id && <ProductDetail product={p} onChange={load} />}
             </div>
-            {expanded === p.id && <ProductDetail product={p} onChange={load} />}
-          </div>
-        ))}
+          );
+        })}
         {filtered.length === 0 && (
           <p className="text-sm text-paper-dim text-center py-8">
             {products.length === 0 ? 'No products yet.' : 'No products match your search.'}
           </p>
         )}
       </Card>
+
+      <Modal
+        open={!!reasonTarget}
+        onClose={() => setReasonTarget(null)}
+        title={
+          reasonTarget?.mode === 'DELETE'
+            ? `Permanently delete ${reasonTarget.product.name}?`
+            : `Deactivate ${reasonTarget?.product.name}?`
+        }
+      >
+        {reasonTarget && (
+          <div className="space-y-3">
+            <p className="text-sm text-paper-dim">
+              {reasonTarget.mode === 'DELETE' ? (
+                <>
+                  This removes the product entirely. It only works if it has no recorded sales, purchases, or stock
+                  activity yet — if it does, delete it will be refused and you should deactivate instead. This
+                  can't be undone.
+                </>
+              ) : (
+                <>
+                  It will be hidden from the POS and product lists, but its sales/purchase history stays intact. You
+                  can reactivate it later.
+                </>
+              )}
+            </p>
+            <div>
+              <Label>Reason (required)</Label>
+              <Input value={reason} onChange={(e) => setReason(e.target.value)} autoFocus placeholder="e.g. duplicate entry, discontinued by supplier…" />
+            </div>
+            <Button
+              className="w-full"
+              variant={reasonTarget.mode === 'DELETE' ? 'danger' : 'primary'}
+              onClick={submitReasonAction}
+              disabled={actionSubmitting || !reason.trim()}
+            >
+              {actionSubmitting ? 'Working…' : reasonTarget.mode === 'DELETE' ? 'Permanently delete' : 'Deactivate'}
+            </Button>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={productModalOpen} onClose={() => setProductModalOpen(false)} title={editingProduct ? 'Edit product' : 'New product'}>
         <div className="space-y-3">

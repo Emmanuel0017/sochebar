@@ -48,7 +48,6 @@ export interface ProductPrice {
   effectiveFrom: string;
   effectiveTo?: string | null;
 }
-
 export interface Supplier {
   id: string;
   name: string;
@@ -95,7 +94,7 @@ export interface Sale {
   total: string;
   status: 'COMPLETED' | 'VOIDED' | 'REFUNDED' | 'PARTIALLY_REFUNDED';
   items: SaleItem[];
-  payments: { id: string; paymentMethod: PaymentMethod; amount: string }[];
+  payments: { id: string; paymentMethod: PaymentMethod; amount: string; customerId?: string | null; customer?: Customer | null; comment?: string | null }[];
 }
 
 export interface SaleItem {

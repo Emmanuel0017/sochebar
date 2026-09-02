@@ -1,4 +1,14 @@
 import { useEffect, useState } from 'react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { api } from '../lib/api';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
@@ -25,6 +35,13 @@ interface CashRow {
   difference: number | null;
 }
 
+interface MonthlyRow {
+  month: string; // "2026-01"
+  sales: number;
+  purchases: number;
+  expenses: number;
+}
+
 const PAYMENT_LABELS: Record<string, string> = {
   cash: 'Cash',
   airtelMoney: 'Airtel Money',
@@ -34,10 +51,54 @@ const PAYMENT_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
+function monthLabel(key: string) {
+  const [y, m] = key.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+}
+
+function MonthlyTrendCard({ rows }: { rows: MonthlyRow[] }) {
+  const data = rows.map((r) => ({ ...r, label: monthLabel(r.month) }));
+  return (
+    <Card className="p-5">
+      <div className="text-xs uppercase tracking-wide text-paper-dim mb-4">
+        Monthly sales, purchases &amp; expenses
+      </div>
+      {data.every((d) => d.sales === 0 && d.purchases === 0 && d.expenses === 0) ? (
+        <p className="text-sm text-paper-dim">No sales, purchases, or expenses recorded yet.</p>
+      ) : (
+        <div style={{ width: '100%', height: 280 }}>
+          <ResponsiveContainer>
+            <BarChart data={data} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2A3136" vertical={false} />
+              <XAxis dataKey="label" tick={{ fill: '#A8A398', fontSize: 12 }} axisLine={{ stroke: '#2A3136' }} tickLine={false} />
+              <YAxis
+                tick={{ fill: '#A8A398', fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                tickFormatter={(v) => (v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(0)}K` : String(v))}
+              />
+              <Tooltip
+                contentStyle={{ background: '#1D2226', border: '1px solid #2A3136', borderRadius: 6, fontSize: 12 }}
+                labelStyle={{ color: '#EDE7DA' }}
+                formatter={(value: number) => formatMWK(value)}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, color: '#A8A398' }} />
+              <Bar dataKey="sales" name="Sales" fill="#4FAE8C" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="purchases" name="Purchases" fill="#C89B3C" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="expenses" name="Expenses" fill="#C1553D" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [stockAlerts, setStockAlerts] = useState<StockSummaryEntry[]>([]);
   const [cashRows, setCashRows] = useState<CashRow[]>([]);
+  const [monthly, setMonthly] = useState<MonthlyRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -45,11 +106,13 @@ export function DashboardPage() {
       api.get('/dashboard/summary'),
       api.get('/dashboard/stock-alerts'),
       api.get('/dashboard/cash'),
+      api.get('/dashboard/monthly'),
     ])
-      .then(([s, alerts, cash]) => {
+      .then(([s, alerts, cash, monthlyRes]) => {
         setSummary(s.data);
         setStockAlerts(alerts.data.filter((a: StockSummaryEntry) => a.status !== 'OK'));
         setCashRows(cash.data);
+        setMonthly(monthlyRes.data);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -93,6 +156,8 @@ export function DashboardPage() {
           ))}
         </div>
       </Card>
+
+      <MonthlyTrendCard rows={monthly} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="p-5">

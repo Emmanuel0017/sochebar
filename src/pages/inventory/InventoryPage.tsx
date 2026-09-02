@@ -9,6 +9,7 @@ import { Modal } from '../../components/Modal';
 import { PageLoader } from '../../components/Spinner';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../lib/errors';
+import { useAuth } from '../../context/AuthContext';
 import type { Product, StockSummaryEntry } from '../../types';
 
 const TABS = ['Stock levels', 'Adjustments', 'Wastage', 'Empty bottles'] as const;
@@ -95,6 +96,8 @@ const ADJUSTMENT_REASONS = ['COUNT_CORRECTION', 'UNRECORDED_STOCK', 'LOST', 'FOU
 
 function Adjustments() {
   const { push } = useToast();
+  const { user } = useAuth();
+  const canWrite = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const [rows, setRows] = useState<any[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -141,9 +144,11 @@ function Adjustments() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button onClick={() => setModalOpen(true)}>New adjustment</Button>
-      </div>
+      {canWrite && (
+        <div className="flex justify-end">
+          <Button onClick={() => setModalOpen(true)}>New adjustment</Button>
+        </div>
+      )}
       <Card>
         {rows.map((r) => (
           <div key={r.id} className="ledger-row flex items-center justify-between px-4 py-3">
@@ -155,10 +160,12 @@ function Adjustments() {
             </div>
             {r.approvedById ? (
               <Badge tone="ok">Approved</Badge>
-            ) : (
+            ) : canWrite ? (
               <Button variant="secondary" onClick={() => approve(r.id)}>
                 Approve
               </Button>
+            ) : (
+              <Badge tone="warn">Pending approval</Badge>
             )}
           </div>
         ))}
@@ -220,6 +227,8 @@ const WASTAGE_REASONS = ['BROKEN', 'SPOILED', 'SPILLED', 'EXPIRED', 'STAFF_CONSU
 
 function Wastage() {
   const { push } = useToast();
+  const { user } = useAuth();
+  const canWrite = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'BARTENDER';
   const [rows, setRows] = useState<any[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -256,9 +265,11 @@ function Wastage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button onClick={() => setModalOpen(true)}>Record wastage</Button>
-      </div>
+      {canWrite && (
+        <div className="flex justify-end">
+          <Button onClick={() => setModalOpen(true)}>Record wastage</Button>
+        </div>
+      )}
       <Card>
         {rows.map((r) => (
           <div key={r.id} className="ledger-row flex items-center justify-between px-4 py-3">
@@ -329,6 +340,8 @@ const EMPTY_BOTTLE_TYPES = ['COLLECTED', 'RETURNED_TO_SUPPLIER', 'BROKEN', 'ADJU
 
 function EmptyBottles() {
   const { push } = useToast();
+  const { user } = useAuth();
+  const canWrite = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'BARTENDER' || user?.role === 'CASHIER';
   const [rows, setRows] = useState<{ productId: string; name: string; count: number }[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -374,11 +387,13 @@ function EmptyBottles() {
           Products page.
         </p>
       )}
-      <div className="flex justify-end">
-        <Button onClick={() => setModalOpen(true)} disabled={products.length === 0}>
-          Log empty bottles
-        </Button>
-      </div>
+      {canWrite && (
+        <div className="flex justify-end">
+          <Button onClick={() => setModalOpen(true)} disabled={products.length === 0}>
+            Log empty bottles
+          </Button>
+        </div>
+      )}
       <Card>
         {rows.map((r) => (
           <div key={r.productId} className="ledger-row flex items-center justify-between px-4 py-3">

@@ -12,6 +12,8 @@ import type { AuditLogEntry } from '../../types';
 const TONE_FOR_ACTION: Record<string, 'ok' | 'warn' | 'danger' | 'neutral'> = {
   VOID_SALE: 'danger',
   DEACTIVATE_PRODUCT: 'danger',
+  DELETE_PRODUCT: 'danger',
+  REACTIVATE_PRODUCT: 'ok',
   DEACTIVATE_USER: 'danger',
   DELETE_UNIT: 'danger',
   CREATE_SALE: 'ok',
@@ -74,19 +76,31 @@ function overviewLine(l: AuditLogEntry): string | null {
     case 'CREATE_SALE':
     case 'VOID_SALE': {
       const preview = itemsPreview(v.items) ?? (v.isFreeformBill ? 'freeform bill' : null);
-      const parts = [preview, v.customerName ? `for ${v.customerName}` : null];
+      const customerNames = Array.isArray(v.customers) ? v.customers.map((c: any) => c.name).join(', ') : v.customerName;
+      const parts = [preview, customerNames ? `for ${customerNames}` : null];
       if (l.action === 'VOID_SALE' && v.reason) parts.push(`(${v.reason})`);
       return parts.filter(Boolean).join(' — ') || null;
     }
     case 'CREATE_PURCHASE':
       return [itemsPreview(v.items), v.supplierName ? `from ${v.supplierName}` : null].filter(Boolean).join(' — ') || null;
     case 'CUSTOMER_PAYMENT':
+      return [v.customerName, v.description].filter(Boolean).join(' — ') || null;
     case 'CREATE_CAPITAL_TRANSACTION':
-      return v.description ?? null;
+      return [v.partnerName, v.description].filter(Boolean).join(' — ') || null;
     case 'CREATE_FIXED_ASSET':
       return v.name ?? null;
     case 'TRANSFER_CASH':
       return v.description ?? null;
+    case 'STOCK_ADJUSTMENT':
+    case 'APPROVE_STOCK_ADJUSTMENT':
+      return [v.productName, v.reason].filter(Boolean).join(' — ') || null;
+    case 'UPDATE_PRODUCT':
+    case 'DEACTIVATE_PRODUCT':
+    case 'REACTIVATE_PRODUCT':
+    case 'DELETE_PRODUCT': {
+      const name = v.productName ?? (l.oldValues as any)?.name;
+      return [name, v.reason].filter(Boolean).join(' — ') || null;
+    }
     default:
       return null;
   }
@@ -175,14 +189,32 @@ function DetailBody({ log }: { log: AuditLogEntry }) {
     const snapshotItems = Array.isArray(v.items) ? v.items : [];
     const usingFallback = snapshotItems.length === 0 && !v.isFreeformBill;
     const items = usingFallback ? fallback.items ?? [] : snapshotItems;
+    const customers: { id?: string; name: string; amount: number }[] = Array.isArray(v.customers) ? v.customers : [];
+    const payments: { paymentMethod: string; amount: number; customerName?: string; comment?: string }[] = Array.isArray(v.payments)
+      ? v.payments
+      : [];
     return (
       <div>
         {header}
         <div className="space-y-1 mb-3">
           {v.invoiceNumber && fieldRow('Invoice', v.invoiceNumber)}
-          {v.customerName && fieldRow('Customer', v.customerName)}
           {log.action === 'VOID_SALE' && v.reason && fieldRow('Void reason', v.reason)}
         </div>
+        {customers.length > 0 && (
+          <>
+            <div className="text-xs uppercase tracking-wide text-paper-dim mb-1.5">
+              {log.action === 'VOID_SALE' ? 'Credit reversed for' : 'Customer(s) credited'}
+            </div>
+            <div className="rounded-md border border-panel-border overflow-hidden mb-3">
+              {customers.map((c, idx) => (
+                <div key={idx} className="ledger-row flex items-center justify-between px-3 py-2">
+                  <span className="text-sm text-paper">{c.name}</span>
+                  <span className="font-mono text-sm text-copper">{money(c.amount)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
         {usingFallback && fallback.loading ? (
           <p className="text-sm text-paper-dim mb-3">Loading products…</p>
         ) : items.length > 0 ? (
@@ -212,6 +244,25 @@ function DetailBody({ log }: { log: AuditLogEntry }) {
           </>
         ) : (
           <p className="text-sm text-paper-dim mb-3">Freeform bill — no individual line items recorded.</p>
+        )}
+        {payments.length > 0 && log.action === 'CREATE_SALE' && (
+          <>
+            <div className="text-xs uppercase tracking-wide text-paper-dim mb-1.5">Payment breakdown</div>
+            <div className="rounded-md border border-panel-border overflow-hidden mb-3">
+              {payments.map((p, idx) => (
+                <div key={idx} className="ledger-row px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-paper">
+                      {actionLabel(p.paymentMethod)}
+                      {p.customerName ? ` — ${p.customerName}` : ''}
+                    </span>
+                    <span className="font-mono text-sm text-paper">{money(p.amount)}</span>
+                  </div>
+                  {p.comment && <div className="text-xs text-paper-dim mt-0.5">"{p.comment}"</div>}
+                </div>
+              ))}
+            </div>
+          </>
         )}
         {v.total != null && fieldRow('Sale total', <span className="font-mono text-brass">{money(v.total)}</span>)}
       </div>
@@ -263,8 +314,78 @@ function DetailBody({ log }: { log: AuditLogEntry }) {
     return (
       <div>
         {header}
+        {v.customerName && fieldRow('Customer', v.customerName)}
         {fieldRow('Amount paid', <span className="font-mono text-ledger">{v.amount != null ? money(v.amount) : '—'}</span>)}
         {v.description && fieldRow('Note', v.description)}
+      </div>
+    );
+  }
+
+  if (log.action === 'STOCK_ADJUSTMENT' || log.action === 'APPROVE_STOCK_ADJUSTMENT') {
+    return (
+      <div>
+        {header}
+        {v.productName && fieldRow('Product', v.productName)}
+        {v.systemQuantity != null && fieldRow('System said', `${v.systemQuantity} ${v.unitName ?? ''}`.trim())}
+        {v.physicalQuantity != null && fieldRow('Counted (physical)', `${v.physicalQuantity} ${v.unitName ?? ''}`.trim())}
+        {(v.differenceBase != null) &&
+          fieldRow(
+            'Difference',
+            <span className={`font-mono ${v.differenceBase < 0 ? 'text-copper' : 'text-ledger'}`}>
+              {v.differenceBase > 0 ? '+' : ''}
+              {v.differenceBase}
+            </span>,
+          )}
+        {v.reason && fieldRow('Reason', v.reason)}
+        {v.notes && fieldRow('Notes', v.notes)}
+        {v.pendingApproval && fieldRow('Status', 'Pending manager approval')}
+      </div>
+    );
+  }
+
+  if (
+    log.action === 'UPDATE_PRODUCT' ||
+    log.action === 'DEACTIVATE_PRODUCT' ||
+    log.action === 'REACTIVATE_PRODUCT' ||
+    log.action === 'DELETE_PRODUCT'
+  ) {
+    const before = (log.oldValues ?? {}) as Record<string, any>;
+    const productName = v.productName ?? before.name;
+    if (log.action === 'UPDATE_PRODUCT') {
+      // Only the fields that were actually changed are in `newValues`, so
+      // pair each one with its prior value from `oldValues` for a clean
+      // before → after view instead of dumping the whole product twice.
+      const changedKeys = Object.keys(v).filter((k) => typeof v[k] !== 'object');
+      return (
+        <div>
+          {header}
+          {productName && fieldRow('Product', productName)}
+          {changedKeys.length > 0 ? (
+            <div className="rounded-md border border-panel-border overflow-hidden mt-2">
+              <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-2 text-xs uppercase tracking-wide text-paper-dim bg-ink-raised">
+                <span>Field</span>
+                <span>Before</span>
+                <span>After</span>
+              </div>
+              {changedKeys.map((key) => (
+                <div key={key} className="ledger-row grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-2 items-center">
+                  <span className="text-sm text-paper capitalize">{key}</span>
+                  <span className="text-sm text-copper">{String(before[key] ?? '—')}</span>
+                  <span className="text-sm text-ledger">{String(v[key] ?? '—')}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-paper-dim mt-2">No field changes were recorded for this edit.</p>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div>
+        {header}
+        {productName && fieldRow('Product', productName)}
+        {v.reason && fieldRow('Reason', v.reason)}
       </div>
     );
   }
@@ -273,9 +394,13 @@ function DetailBody({ log }: { log: AuditLogEntry }) {
     return (
       <div>
         {header}
+        {v.partnerName && fieldRow('Partner', v.partnerName)}
         {v.transactionType && fieldRow('Type', v.transactionType === 'CONTRIBUTION' ? 'Contribution' : 'Drawing')}
         {v.description && fieldRow('Description', v.description)}
         {fieldRow('Amount', <span className="font-mono text-brass">{v.amount != null ? money(v.amount) : '—'}</span>)}
+        {v.stockValue != null && (
+          <>{fieldRow('Of which stock', <span className="font-mono text-brass">{money(v.stockValue)}</span>)}</>
+        )}
       </div>
     );
   }

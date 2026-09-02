@@ -22,6 +22,8 @@ interface CartLine {
 interface PaymentLine {
   paymentMethod: PaymentMethod;
   amount: number;
+  customerId?: string;
+  comment?: string;
 }
 
 const METHODS: PaymentMethod[] = ['CASH', 'AIRTEL_MONEY', 'MPAMBA', 'BANK', 'CREDIT', 'OTHER'];
@@ -34,7 +36,6 @@ export function PosPage() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [payments, setPayments] = useState<PaymentLine[]>([{ paymentMethod: 'CASH', amount: 0 }]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [customerId, setCustomerId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [saleDate, setSaleDate] = useState(() => localDateStr());
   const today = localDateStr();
@@ -120,14 +121,19 @@ export function PosPage() {
           quantity: l.quantity,
           unitPrice: l.unitPrice,
         })),
-        payments: payments.filter((p) => p.amount > 0),
-        customerId: payments.some((p) => p.paymentMethod === 'CREDIT' && p.amount > 0) ? customerId : undefined,
+        payments: payments
+          .filter((p) => p.amount > 0)
+          .map((p) => ({
+            paymentMethod: p.paymentMethod,
+            amount: p.amount,
+            customerId: p.paymentMethod === 'CREDIT' ? p.customerId : undefined,
+            comment: p.comment || undefined,
+          })),
         saleDate: saleDate !== today ? saleDate : undefined,
       });
       push(saleDate !== today ? `Backdated sale recorded for ${saleDate}` : 'Sale completed');
       setCart([]);
       setCheckoutOpen(false);
-      setCustomerId('');
       setSaleDate(today);
     } catch (err) {
       push(errorMessage(err), 'error');
@@ -136,7 +142,11 @@ export function PosPage() {
     }
   }
 
-  const needsCustomer = payments.some((p) => p.paymentMethod === 'CREDIT' && p.amount > 0);
+  // Every CREDIT line needs its own customer picked - this is what lets one
+  // sale be split across several customers' tabs instead of just one.
+  const creditLinesMissingCustomer = payments.some(
+    (p) => p.paymentMethod === 'CREDIT' && p.amount > 0 && !p.customerId,
+  );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 h-[calc(100vh-3rem)]">
@@ -242,35 +252,55 @@ export function PosPage() {
 
           <div className="space-y-2">
             {payments.map((p, idx) => (
-              <div key={idx} className="flex gap-2 items-end">
-                <div className="flex-1">
-                  <Label>Method</Label>
-                  <Select
-                    value={p.paymentMethod}
-                    onChange={(e) => updatePayment(idx, { paymentMethod: e.target.value as PaymentMethod })}
-                  >
-                    {METHODS.map((m) => (
-                      <option key={m} value={m}>
-                        {m.replace('_', ' ')}
-                      </option>
-                    ))}
-                  </Select>
+              <div key={idx} className="space-y-2 pb-2 border-b border-panel-border/60 last:border-0">
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <Label>Method</Label>
+                    <Select
+                      value={p.paymentMethod}
+                      onChange={(e) =>
+                        updatePayment(idx, {
+                          paymentMethod: e.target.value as PaymentMethod,
+                          customerId: e.target.value === 'CREDIT' ? p.customerId : undefined,
+                        })
+                      }
+                    >
+                      {METHODS.map((m) => (
+                        <option key={m} value={m}>
+                          {m.replace('_', ' ')}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="w-32">
+                    <Label>Amount</Label>
+                    <Input
+                      type="number"
+                      value={p.amount}
+                      onChange={(e) => updatePayment(idx, { amount: Number(e.target.value) })}
+                    />
+                  </div>
+                  {payments.length > 1 && (
+                    <button
+                      onClick={() => setPayments((prev) => prev.filter((_, i) => i !== idx))}
+                      className="text-paper-dim hover:text-copper pb-2"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
                 </div>
-                <div className="w-32">
-                  <Label>Amount</Label>
-                  <Input
-                    type="number"
-                    value={p.amount}
-                    onChange={(e) => updatePayment(idx, { amount: Number(e.target.value) })}
-                  />
-                </div>
-                {payments.length > 1 && (
-                  <button
-                    onClick={() => setPayments((prev) => prev.filter((_, i) => i !== idx))}
-                    className="text-paper-dim hover:text-copper pb-2"
-                  >
-                    <X size={16} />
-                  </button>
+                {p.paymentMethod === 'CREDIT' && (
+                  <div>
+                    <Label>Customer to credit</Label>
+                    <Select value={p.customerId ?? ''} onChange={(e) => updatePayment(idx, { customerId: e.target.value })}>
+                      <option value="">Select customer…</option>
+                      {customers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
                 )}
               </div>
             ))}
@@ -280,21 +310,11 @@ export function PosPage() {
             >
               + Split payment
             </button>
+            <p className="text-xs text-paper-dim">
+              Splitting into more than one Credit line lets you bill this sale to more than one customer at once —
+              e.g. two people at a table each covering half.
+            </p>
           </div>
-
-          {needsCustomer && (
-            <div>
-              <Label>Customer (required for credit)</Label>
-              <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                <option value="">Select customer…</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
 
           <div className="flex items-center justify-between text-sm pt-2 border-t border-panel-border">
             <span className="text-paper-dim">Received</span>
@@ -306,7 +326,7 @@ export function PosPage() {
           <Button
             className="w-full"
             onClick={completeSale}
-            disabled={submitting || paidTotal < total - 0.01 || (needsCustomer && !customerId)}
+            disabled={submitting || paidTotal < total - 0.01 || creditLinesMissingCustomer}
           >
             {submitting ? 'Processing…' : 'Complete sale'}
           </Button>

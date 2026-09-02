@@ -53,7 +53,7 @@ function CapitalAccountsTab() {
   const [partnerModalOpen, setPartnerModalOpen] = useState(false);
   const [newPartnerName, setNewPartnerName] = useState('');
   const [txnModalOpen, setTxnModalOpen] = useState(false);
-  const [form, setForm] = useState({ partnerId: '', transactionType: 'CONTRIBUTION', description: '', amount: '' });
+  const [form, setForm] = useState({ partnerId: '', transactionType: 'CONTRIBUTION', description: '', amount: '', stockValue: '' });
 
   function load() {
     setLoading(true);
@@ -86,10 +86,11 @@ function CapitalAccountsTab() {
         transactionType: form.transactionType,
         description: form.description,
         amount: Number(form.amount),
+        stockValue: form.stockValue ? Number(form.stockValue) : undefined,
       });
       push('Capital transaction recorded');
       setTxnModalOpen(false);
-      setForm({ partnerId: '', transactionType: 'CONTRIBUTION', description: '', amount: '' });
+      setForm({ partnerId: '', transactionType: 'CONTRIBUTION', description: '', amount: '', stockValue: '' });
       load();
     } catch (err) {
       push(errorMessage(err), 'error');
@@ -122,6 +123,9 @@ function CapitalAccountsTab() {
               </div>
               <div className="text-xs text-paper-dim">
                 {t.transactionType === 'CONTRIBUTION' ? 'Contribution' : 'Drawing'} · {formatDate(t.transactionDate)}
+                {t.stockValue != null && (
+                  <> · <span className="text-brass">{formatMWK(t.stockValue)} stock</span></>
+                )}
               </div>
             </div>
             <span className={`font-mono text-sm ${t.transactionType === 'CONTRIBUTION' ? 'text-ledger' : 'text-copper'}`}>
@@ -171,11 +175,25 @@ function CapitalAccountsTab() {
           </div>
           <div>
             <Label>Description</Label>
-            <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="e.g. Carlsberg crates, part rent, fuel…" />
           </div>
           <div>
             <Label>Amount (MWK)</Label>
             <Input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+          </div>
+          <div>
+            <Label>Of that, how much was stock/inventory? (optional)</Label>
+            <Input
+              type="number"
+              value={form.stockValue}
+              onChange={(e) => setForm({ ...form, stockValue: e.target.value })}
+              placeholder="Leave blank if none of it was stock"
+            />
+            <p className="text-xs text-paper-dim mt-1">
+              This is the extra column from the paper capital account sheet — it splits out how much of this
+              amount was spent buying stock (drinks, snacks, etc.) versus other things like rent, fuel, or
+              fixtures. Leave it blank for a purely non-stock entry, or if you're not sure.
+            </p>
           </div>
           <Button className="w-full" onClick={submitTxn} disabled={!form.partnerId || !form.description || !form.amount}>
             Save

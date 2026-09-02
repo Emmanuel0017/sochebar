@@ -10,6 +10,7 @@ import { PageLoader } from '../../components/Spinner';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../lib/errors';
 import { formatMWK, formatDate } from '../../lib/format';
+import { useAuth } from '../../context/AuthContext';
 import type { Product, Purchase, Supplier } from '../../types';
 
 interface ItemDraft {
@@ -21,6 +22,10 @@ interface ItemDraft {
 
 export function PurchasesPage() {
   const { push } = useToast();
+  const { user } = useAuth();
+  // Storekeepers can see purchase history for their own reference, but
+  // recording a new purchase is now Admin/Manager only.
+  const canRecord = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -99,11 +104,13 @@ export function PurchasesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl text-paper">Purchases</h1>
-        <Button onClick={() => setModalOpen(true)}>
-          <span className="flex items-center gap-1.5">
-            <Plus size={15} /> Receive stock
-          </span>
-        </Button>
+        {canRecord && (
+          <Button onClick={() => setModalOpen(true)}>
+            <span className="flex items-center gap-1.5">
+              <Plus size={15} /> Receive stock
+            </span>
+          </Button>
+        )}
       </div>
 
       <div className="relative max-w-sm">

@@ -44,6 +44,7 @@ export function CustomersPage() {
   const [manualTotal, setManualTotal] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [billPaymentMethod, setBillPaymentMethod] = useState<PaymentMethod>('CASH');
+  const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'CASHIER';
@@ -110,6 +111,7 @@ export function CustomersPage() {
     setManualTotal('');
     setPaymentAmount('');
     setBillPaymentMethod('CASH');
+    setComment('');
     setHistory([]);
     setSelectedHistoryEntry(null);
     try {
@@ -153,7 +155,7 @@ export function CustomersPage() {
             unitPrice: Number(it.unitPrice),
           })),
         manualTotal: items.length === 0 ? Number(manualTotal) : undefined,
-        payments: [{ paymentMethod: 'CREDIT', amount: billTotal }],
+        payments: [{ paymentMethod: 'CREDIT', amount: billTotal, comment: comment.trim() || undefined }],
       });
       push('Bill added to tab');
       setTxnTarget(null);
@@ -169,9 +171,10 @@ export function CustomersPage() {
     if (!txnTarget) return;
     setSubmitting(true);
     try {
+      const base = `Paid via ${billPaymentMethod.replace('_', ' ')}`;
       await api.post(`/customers/${txnTarget.id}/payment`, {
         amount: Number(paymentAmount),
-        description: `Paid via ${billPaymentMethod.replace('_', ' ')}`,
+        description: comment.trim() ? `${base} — ${comment.trim()}` : base,
       });
       push('Payment recorded');
       setTxnTarget(null);
@@ -385,6 +388,15 @@ export function CustomersPage() {
                 </div>
               )}
 
+              <div>
+                <Label>Comment (optional)</Label>
+                <Input
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="e.g. paid half now, rest Friday…"
+                />
+              </div>
+
               <div className="flex items-center justify-between pt-2 border-t border-panel-border">
                 <span className="text-sm text-paper-dim">New balance will be</span>
                 <span className="font-mono text-lg text-copper">{formatMWK((txnBalance ?? 0) + billTotal)}</span>
@@ -409,6 +421,14 @@ export function CustomersPage() {
                   <option value="BANK">Bank</option>
                   <option value="OTHER">Other</option>
                 </Select>
+              </div>
+              <div>
+                <Label>Comment (optional)</Label>
+                <Input
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="e.g. via John on his behalf…"
+                />
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-panel-border">
                 <span className="text-sm text-paper-dim">New balance will be</span>

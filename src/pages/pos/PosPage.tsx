@@ -27,6 +27,7 @@ interface PaymentLine {
 }
 
 const METHODS: PaymentMethod[] = ['CASH', 'AIRTEL_MONEY', 'MPAMBA', 'BANK', 'CREDIT', 'OTHER'];
+const NEW_CUSTOMER_VALUE = '__new__';
 
 export function PosPage() {
   const { push } = useToast();
@@ -40,10 +41,22 @@ export function PosPage() {
   const [saleDate, setSaleDate] = useState(() => localDateStr());
   const today = localDateStr();
 
+  // Inline "add customer while checking out" — lets a cashier credit a
+  // brand-new customer's tab without leaving the sale to visit the
+  // Customers page first. Tracks which payment line triggered it so the
+  // new customer can be selected back into that exact line once saved.
+  const [newCustomerForIdx, setNewCustomerForIdx] = useState<number | null>(null);
+  const [newCustomerForm, setNewCustomerForm] = useState({ name: '', phone: '' });
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
+
   useEffect(() => {
     api.get('/products', { params: { isActive: true } }).then((r) => setProducts(r.data));
-    api.get('/customers').then((r) => setCustomers(r.data));
+    loadCustomers();
   }, []);
+
+  function loadCustomers() {
+    return api.get('/customers').then((r) => setCustomers(r.data));
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -109,6 +122,34 @@ export function PosPage() {
 
   function updatePayment(idx: number, patch: Partial<PaymentLine>) {
     setPayments((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
+  }
+
+  function handleCustomerSelect(idx: number, value: string) {
+    if (value === NEW_CUSTOMER_VALUE) {
+      setNewCustomerForm({ name: '', phone: '' });
+      setNewCustomerForIdx(idx);
+      return;
+    }
+    updatePayment(idx, { customerId: value });
+  }
+
+  async function createCustomerInline() {
+    if (!newCustomerForm.name.trim() || newCustomerForIdx === null) return;
+    setCreatingCustomer(true);
+    try {
+      const { data } = await api.post('/customers', {
+        name: newCustomerForm.name.trim(),
+        phone: newCustomerForm.phone.trim() || undefined,
+      });
+      await loadCustomers();
+      updatePayment(newCustomerForIdx, { customerId: data.id });
+      push(`${data.name} added and selected for this bill`);
+      setNewCustomerForIdx(null);
+    } catch (err) {
+      push(errorMessage(err), 'error');
+    } finally {
+      setCreatingCustomer(false);
+    }
   }
 
   async function completeSale() {
@@ -292,13 +333,14 @@ export function PosPage() {
                 {p.paymentMethod === 'CREDIT' && (
                   <div>
                     <Label>Customer to credit</Label>
-                    <Select value={p.customerId ?? ''} onChange={(e) => updatePayment(idx, { customerId: e.target.value })}>
+                    <Select value={p.customerId ?? ''} onChange={(e) => handleCustomerSelect(idx, e.target.value)}>
                       <option value="">Select customer…</option>
                       {customers.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}
                         </option>
                       ))}
+                      <option value={NEW_CUSTOMER_VALUE}>+ Add new customer…</option>
                     </Select>
                   </div>
                 )}
@@ -329,6 +371,32 @@ export function PosPage() {
             disabled={submitting || paidTotal < total - 0.01 || creditLinesMissingCustomer}
           >
             {submitting ? 'Processing…' : 'Complete sale'}
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal open={newCustomerForIdx !== null} onClose={() => setNewCustomerForIdx(null)} title="Add new customer">
+        <div className="space-y-3">
+          <p className="text-xs text-paper-dim">
+            They'll be saved to Customers and selected for this bill's credit line automatically.
+          </p>
+          <div>
+            <Label>Name</Label>
+            <Input
+              value={newCustomerForm.name}
+              onChange={(e) => setNewCustomerForm((f) => ({ ...f, name: e.target.value }))}
+              autoFocus
+            />
+          </div>
+          <div>
+            <Label>Phone (optional)</Label>
+            <Input
+              value={newCustomerForm.phone}
+              onChange={(e) => setNewCustomerForm((f) => ({ ...f, phone: e.target.value }))}
+            />
+          </div>
+          <Button className="w-full" onClick={createCustomerInline} disabled={creatingCustomer || !newCustomerForm.name.trim()}>
+            {creatingCustomer ? 'Adding…' : 'Add customer and select'}
           </Button>
         </div>
       </Modal>

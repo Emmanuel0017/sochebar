@@ -11,6 +11,7 @@ import { formatMWK, downloadBlob, localDateStr } from '../../lib/format';
 
 const REPORT_TABS = [
   'Daily sheet',
+  'Bills',
   'Profit',
   'Product sales',
   'Customer credit',
@@ -37,6 +38,7 @@ export function ReportsPage() {
   const [to, setTo] = useState(todayStr());
 
   const [asOfDate, setAsOfDate] = useState(todayStr());
+  const [billsDate, setBillsDate] = useState(todayStr());
 
   return (
     <div className="space-y-6">
@@ -77,6 +79,7 @@ export function ReportsPage() {
       </div>
 
       {tab === 'Daily sheet' && <DailySheetReport />}
+      {tab === 'Bills' && <BillsReport date={billsDate} setDate={setBillsDate} />}
       {tab === 'Profit' && <ProfitReport from={from} to={to} />}
       {tab === 'Product sales' && <ProductSalesReport from={from} to={to} />}
       {tab === 'Customer credit' && <CustomerCreditReport />}
@@ -85,6 +88,96 @@ export function ReportsPage() {
       {tab === 'Balance Sheet' && <BalanceSheetReport asOfDate={asOfDate} />}
       {tab === 'Capital accounts' && <CapitalAccountsReport />}
       {tab === 'Cash book' && <CashBookReport from={from} to={to} />}
+    </div>
+  );
+}
+
+function ExportButton({ onClick, label = 'Export to Excel' }: { onClick: () => void; label?: string }) {
+  const [exporting, setExporting] = useState(false);
+  const { push } = useToast();
+  async function run() {
+    setExporting(true);
+    try {
+      await onClick();
+      push('Exported');
+    } catch (err) {
+      push(errorMessage(err), 'error');
+    } finally {
+      setExporting(false);
+    }
+  }
+  return (
+    <Button onClick={run} disabled={exporting} variant="secondary">
+      <span className="flex items-center gap-1.5">
+        <Download size={15} /> {exporting ? 'Exporting…' : label}
+      </span>
+    </Button>
+  );
+}
+
+function BillsReport({ date, setDate }: { date: string; setDate: (d: string) => void }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    api
+      .get('/reports/bills', { params: { date } })
+      .then((r) => setData(r.data))
+      .finally(() => setLoading(false));
+  }, [date]);
+
+  async function exportExcel() {
+    const res = await api.get('/exports/bills', { params: { date }, responseType: 'blob' });
+    downloadBlob(res.data, `Sochebar_Bills_${date}.xlsx`);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <Label>Day</Label>
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <ExportButton onClick={exportExcel} />
+      </div>
+
+      {loading || !data ? (
+        <PageLoader />
+      ) : (
+        <>
+          <Card>
+            <div className="grid grid-cols-[2fr_1fr_2fr_1fr] gap-2 px-4 py-2 text-xs uppercase tracking-wide text-paper-dim border-b border-panel-border">
+              <span>Customer</span>
+              <span>Invoice #</span>
+              <span>Note</span>
+              <span className="text-right">Amount</span>
+            </div>
+            {data.bills.map((b: any) => (
+              <div key={b.id} className="ledger-row grid grid-cols-[2fr_1fr_2fr_1fr] gap-2 px-4 py-2.5 items-center">
+                <span className="text-sm text-paper">{b.customerName}</span>
+                <span className="text-xs text-paper-dim font-mono">{b.invoiceNumber}</span>
+                <span className="text-xs text-paper-dim">{b.comment ?? '—'}</span>
+                <span className="font-mono text-sm text-right text-copper">{formatMWK(b.amount)}</span>
+              </div>
+            ))}
+            {data.bills.length === 0 && (
+              <p className="text-sm text-paper-dim text-center py-8">No bills recorded on {date}.</p>
+            )}
+          </Card>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="p-4 flex items-center justify-between">
+              <span className="text-sm text-paper-dim">Total bills on {date}</span>
+              <span className="font-mono text-lg text-copper">{formatMWK(data.dayTotal)}</span>
+            </Card>
+            <Card className="p-4 flex items-center justify-between">
+              <span className="text-sm text-paper-dim">All bills to date (through {date})</span>
+              <span className="font-mono text-lg text-brass">{formatMWK(data.cumulativeTotal)}</span>
+            </Card>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -228,15 +321,25 @@ function ProfitReport({ from, to }: { from: string; to: string }) {
     ['Net profit', data.netProfit, data.netProfit >= 0 ? 'text-ledger' : 'text-copper'],
   ] as const;
 
+  async function exportExcel() {
+    const res = await api.get('/exports/profit', { params: { from, to }, responseType: 'blob' });
+    downloadBlob(res.data, `Sochebar_Profit_${from}_${to}.xlsx`);
+  }
+
   return (
-    <Card>
-      {rows.map(([label, value, cls]) => (
-        <div key={label} className="ledger-row flex items-center justify-between px-4 py-3">
-          <span className="text-sm text-paper-dim">{label}</span>
-          <span className={`font-mono text-sm ${cls}`}>{formatMWK(value)}</span>
-        </div>
-      ))}
-    </Card>
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <ExportButton onClick={exportExcel} />
+      </div>
+      <Card>
+        {rows.map(([label, value, cls]) => (
+          <div key={label} className="ledger-row flex items-center justify-between px-4 py-3">
+            <span className="text-sm text-paper-dim">{label}</span>
+            <span className={`font-mono text-sm ${cls}`}>{formatMWK(value)}</span>
+          </div>
+        ))}
+      </Card>
+    </div>
   );
 }
 
@@ -249,48 +352,94 @@ function ProductSalesReport({ from, to }: { from: string; to: string }) {
 
   if (!rows) return <PageLoader />;
 
+  async function exportExcel() {
+    const res = await api.get('/exports/product-sales', { params: { from, to }, responseType: 'blob' });
+    downloadBlob(res.data, `Sochebar_Product_Sales_${from}_${to}.xlsx`);
+  }
+
   return (
-    <Card>
-      <div className="grid grid-cols-[2fr_repeat(4,1fr)] gap-2 px-4 py-2 text-xs uppercase tracking-wide text-paper-dim border-b border-panel-border">
-        <span>Product</span>
-        <span className="text-right">Qty</span>
-        <span className="text-right">Revenue</span>
-        <span className="text-right">Gross profit</span>
-        <span className="text-right">Margin</span>
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <ExportButton onClick={exportExcel} />
       </div>
-      {rows.map((r) => (
-        <div key={r.productId} className="ledger-row grid grid-cols-[2fr_repeat(4,1fr)] gap-2 px-4 py-2.5 items-center">
-          <span className="text-sm text-paper">{r.name}</span>
-          <span className="font-mono text-sm text-right text-paper-dim">{r.qty}</span>
-          <span className="font-mono text-sm text-right">{formatMWK(r.revenue)}</span>
-          <span className="font-mono text-sm text-right text-ledger">{formatMWK(r.grossProfit)}</span>
-          <span className="font-mono text-sm text-right text-paper-dim">{r.marginPercent}%</span>
+      <Card>
+        <div className="grid grid-cols-[2fr_repeat(4,1fr)] gap-2 px-4 py-2 text-xs uppercase tracking-wide text-paper-dim border-b border-panel-border">
+          <span>Product</span>
+          <span className="text-right">Qty</span>
+          <span className="text-right">Revenue</span>
+          <span className="text-right">Gross profit</span>
+          <span className="text-right">Margin</span>
         </div>
-      ))}
-      {rows.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No sales in this period.</p>}
-    </Card>
+        {rows.map((r) => (
+          <div key={r.productId} className="ledger-row grid grid-cols-[2fr_repeat(4,1fr)] gap-2 px-4 py-2.5 items-center">
+            <span className="text-sm text-paper">{r.name}</span>
+            <span className="font-mono text-sm text-right text-paper-dim">{r.qty}</span>
+            <span className="font-mono text-sm text-right">{formatMWK(r.revenue)}</span>
+            <span className="font-mono text-sm text-right text-ledger">{formatMWK(r.grossProfit)}</span>
+            <span className="font-mono text-sm text-right text-paper-dim">{r.marginPercent}%</span>
+          </div>
+        ))}
+        {rows.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No sales in this period.</p>}
+      </Card>
+    </div>
   );
 }
 
 function CustomerCreditReport() {
   const [rows, setRows] = useState<any[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   useEffect(() => {
     api.get('/reports/customer-credit').then((r) => setRows(r.data));
   }, []);
   if (!rows) return <PageLoader />;
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function exportExcel(scope: 'all' | 'selected') {
+    const ids = scope === 'selected' ? [...selected] : undefined;
+    const res = await api.get('/exports/customer-credit', {
+      params: ids?.length ? { customerIds: ids.join(',') } : undefined,
+      responseType: 'blob',
+    });
+    downloadBlob(res.data, `Sochebar_Customer_Credit_${scope === 'selected' ? `Selected_${ids!.length}` : 'All'}.xlsx`);
+  }
+
   return (
-    <Card>
-      {rows.map((r) => (
-        <div key={r.customer} className="ledger-row flex items-center justify-between px-4 py-3">
-          <span className="text-sm text-paper">{r.customer}</span>
-          <div className="flex gap-4 font-mono text-sm">
-            <span className="text-paper-dim">Sales {formatMWK(r.creditSales)}</span>
-            <span className="text-copper">Owes {formatMWK(r.outstanding)}</span>
+    <div className="space-y-3">
+      <div className="flex justify-end gap-2">
+        {selected.size > 0 && <ExportButton onClick={() => exportExcel('selected')} label={`Export selected (${selected.size})`} />}
+        <ExportButton onClick={() => exportExcel('all')} label="Export all to Excel" />
+      </div>
+      <Card>
+        {rows.map((r) => (
+          <div key={r.customerId ?? r.customer} className="ledger-row flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              {r.customerId && (
+                <input
+                  type="checkbox"
+                  checked={selected.has(r.customerId)}
+                  onChange={() => toggle(r.customerId)}
+                  className="accent-brass"
+                />
+              )}
+              <span className="text-sm text-paper">{r.customer}</span>
+            </div>
+            <div className="flex gap-4 font-mono text-sm">
+              <span className="text-paper-dim">Sales {formatMWK(r.creditSales)}</span>
+              <span className="text-copper">Owes {formatMWK(r.outstanding)}</span>
+            </div>
           </div>
-        </div>
-      ))}
-      {rows.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No outstanding customer credit.</p>}
-    </Card>
+        ))}
+        {rows.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No outstanding customer credit.</p>}
+      </Card>
+    </div>
   );
 }
 
@@ -300,19 +449,30 @@ function SupplierDebtReport() {
     api.get('/reports/supplier-credit').then((r) => setRows(r.data));
   }, []);
   if (!rows) return <PageLoader />;
+
+  async function exportExcel() {
+    const res = await api.get('/exports/supplier-credit', { responseType: 'blob' });
+    downloadBlob(res.data, `Sochebar_Supplier_Debt.xlsx`);
+  }
+
   return (
-    <Card>
-      {rows.map((r) => (
-        <div key={r.supplier} className="ledger-row flex items-center justify-between px-4 py-3">
-          <span className="text-sm text-paper">{r.supplier}</span>
-          <div className="flex gap-4 font-mono text-sm">
-            <span className="text-paper-dim">Purchases {formatMWK(r.purchases)}</span>
-            <span className="text-copper">Owed {formatMWK(r.outstanding)}</span>
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <ExportButton onClick={exportExcel} />
+      </div>
+      <Card>
+        {rows.map((r) => (
+          <div key={r.supplier} className="ledger-row flex items-center justify-between px-4 py-3">
+            <span className="text-sm text-paper">{r.supplier}</span>
+            <div className="flex gap-4 font-mono text-sm">
+              <span className="text-paper-dim">Purchases {formatMWK(r.purchases)}</span>
+              <span className="text-copper">Owed {formatMWK(r.outstanding)}</span>
+            </div>
           </div>
-        </div>
-      ))}
-      {rows.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No outstanding supplier debt.</p>}
-    </Card>
+        ))}
+        {rows.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No outstanding supplier debt.</p>}
+      </Card>
+    </div>
   );
 }
 
@@ -325,8 +485,16 @@ function PLStatementReport({ from, to }: { from: string; to: string }) {
 
   if (!data) return <PageLoader />;
 
+  async function exportExcel() {
+    const res = await api.get('/exports/pl-statement', { params: { from, to }, responseType: 'blob' });
+    downloadBlob(res.data, `Sochebar_PL_Statement_${from}_${to}.xlsx`);
+  }
+
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <ExportButton onClick={exportExcel} />
+      </div>
       <Card>
         <div className="ledger-row flex items-center justify-between px-4 py-3">
           <span className="text-sm text-paper">Sales</span>
@@ -389,8 +557,17 @@ function BalanceSheetReport({ asOfDate }: { asOfDate: string }) {
 
   if (!data) return <PageLoader />;
 
+  async function exportExcel() {
+    const res = await api.get('/exports/balance-sheet', { params: asOfDate ? { asOfDate } : undefined, responseType: 'blob' });
+    downloadBlob(res.data, `Sochebar_Balance_Sheet_${asOfDate || 'current'}.xlsx`);
+  }
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <ExportButton onClick={exportExcel} />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <Card>
         <div className="px-4 py-2 text-xs uppercase tracking-wide text-paper-dim">Non-current assets</div>
         {data.nonCurrentAssets.fixedAssets.map((a: any) => (
@@ -472,6 +649,7 @@ function BalanceSheetReport({ asOfDate }: { asOfDate: string }) {
         )}
       </Card>
     </div>
+    </div>
   );
 }
 
@@ -481,24 +659,35 @@ function CapitalAccountsReport() {
     api.get('/reports/capital-accounts').then((r) => setRows(r.data));
   }, []);
   if (!rows) return <PageLoader />;
+
+  async function exportExcel() {
+    const res = await api.get('/exports/capital-accounts', { responseType: 'blob' });
+    downloadBlob(res.data, `Sochebar_Capital_Accounts.xlsx`);
+  }
+
   return (
-    <Card>
-      <div className="grid grid-cols-[2fr_repeat(3,1fr)] gap-2 px-4 py-2 text-xs uppercase tracking-wide text-paper-dim border-b border-panel-border">
-        <span>Partner</span>
-        <span className="text-right">Contributions</span>
-        <span className="text-right">Drawings</span>
-        <span className="text-right">Balance</span>
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <ExportButton onClick={exportExcel} />
       </div>
-      {rows.map((r) => (
-        <div key={r.partner} className="ledger-row grid grid-cols-[2fr_repeat(3,1fr)] gap-2 px-4 py-3 items-center">
-          <span className="text-sm text-paper">{r.partner}</span>
-          <span className="font-mono text-sm text-right text-ledger">{formatMWK(r.contributions)}</span>
-          <span className="font-mono text-sm text-right text-copper">{formatMWK(r.drawings)}</span>
-          <span className="font-mono text-sm text-right text-brass">{formatMWK(r.balance)}</span>
+      <Card>
+        <div className="grid grid-cols-[2fr_repeat(3,1fr)] gap-2 px-4 py-2 text-xs uppercase tracking-wide text-paper-dim border-b border-panel-border">
+          <span>Partner</span>
+          <span className="text-right">Contributions</span>
+          <span className="text-right">Drawings</span>
+          <span className="text-right">Balance</span>
         </div>
-      ))}
-      {rows.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No partners recorded yet.</p>}
-    </Card>
+        {rows.map((r) => (
+          <div key={r.partner} className="ledger-row grid grid-cols-[2fr_repeat(3,1fr)] gap-2 px-4 py-3 items-center">
+            <span className="text-sm text-paper">{r.partner}</span>
+            <span className="font-mono text-sm text-right text-ledger">{formatMWK(r.contributions)}</span>
+            <span className="font-mono text-sm text-right text-copper">{formatMWK(r.drawings)}</span>
+            <span className="font-mono text-sm text-right text-brass">{formatMWK(r.balance)}</span>
+          </div>
+        ))}
+        {rows.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No partners recorded yet.</p>}
+      </Card>
+    </div>
   );
 }
 
@@ -509,25 +698,36 @@ function CashBookReport({ from, to }: { from: string; to: string }) {
     api.get('/reports/cash-book', { params: { from, to } }).then((r) => setRows(r.data));
   }, [from, to]);
   if (!rows) return <PageLoader />;
+
+  async function exportExcel() {
+    const res = await api.get('/exports/cash-book', { params: { from, to }, responseType: 'blob' });
+    downloadBlob(res.data, `Sochebar_Cash_Book_${from}_${to}.xlsx`);
+  }
+
   return (
-    <Card>
-      <div className="grid grid-cols-[2fr_repeat(4,1fr)] gap-2 px-4 py-2 text-xs uppercase tracking-wide text-paper-dim border-b border-panel-border">
-        <span>Account</span>
-        <span className="text-right">Opening</span>
-        <span className="text-right">In</span>
-        <span className="text-right">Out</span>
-        <span className="text-right">Closing</span>
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <ExportButton onClick={exportExcel} />
       </div>
-      {rows.map((r) => (
-        <div key={r.account} className="ledger-row grid grid-cols-[2fr_repeat(4,1fr)] gap-2 px-4 py-3 items-center">
-          <span className="text-sm text-paper">{r.account}</span>
-          <span className="font-mono text-sm text-right text-paper-dim">{formatMWK(r.openingBalance)}</span>
-          <span className="font-mono text-sm text-right text-ledger">{formatMWK(r.totalIn)}</span>
-          <span className="font-mono text-sm text-right text-copper">{formatMWK(r.totalOut)}</span>
-          <span className="font-mono text-sm text-right text-brass">{formatMWK(r.closingBalance)}</span>
+      <Card>
+        <div className="grid grid-cols-[2fr_repeat(4,1fr)] gap-2 px-4 py-2 text-xs uppercase tracking-wide text-paper-dim border-b border-panel-border">
+          <span>Account</span>
+          <span className="text-right">Opening</span>
+          <span className="text-right">In</span>
+          <span className="text-right">Out</span>
+          <span className="text-right">Closing</span>
         </div>
-      ))}
-      {rows.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No cash accounts set up yet.</p>}
-    </Card>
+        {rows.map((r) => (
+          <div key={r.account} className="ledger-row grid grid-cols-[2fr_repeat(4,1fr)] gap-2 px-4 py-3 items-center">
+            <span className="text-sm text-paper">{r.account}</span>
+            <span className="font-mono text-sm text-right text-paper-dim">{formatMWK(r.openingBalance)}</span>
+            <span className="font-mono text-sm text-right text-ledger">{formatMWK(r.totalIn)}</span>
+            <span className="font-mono text-sm text-right text-copper">{formatMWK(r.totalOut)}</span>
+            <span className="font-mono text-sm text-right text-brass">{formatMWK(r.closingBalance)}</span>
+          </div>
+        ))}
+        {rows.length === 0 && <p className="text-sm text-paper-dim text-center py-8">No cash accounts set up yet.</p>}
+      </Card>
+    </div>
   );
 }

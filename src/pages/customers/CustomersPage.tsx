@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Search, Trash2, Download } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -8,7 +8,7 @@ import { Modal } from '../../components/Modal';
 import { PageLoader } from '../../components/Spinner';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../lib/errors';
-import { formatMWK, formatDateTime } from '../../lib/format';
+import { formatMWK, formatDateTime, downloadBlob, localDateStr } from '../../lib/format';
 import { useAuth } from '../../context/AuthContext';
 import type { Customer, PaymentMethod, Product } from '../../types';
 
@@ -29,6 +29,8 @@ export function CustomersPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
 
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -45,7 +47,9 @@ export function CustomersPage() {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [billPaymentMethod, setBillPaymentMethod] = useState<PaymentMethod>('CASH');
   const [comment, setComment] = useState('');
+  const [billDate, setBillDate] = useState(() => localDateStr());
   const [submitting, setSubmitting] = useState(false);
+  const today = localDateStr();
 
   const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'CASHIER';
   const canEdit = user?.role === 'ADMIN' || user?.role === 'MANAGER';
@@ -74,6 +78,41 @@ export function CustomersPage() {
     if (!q) return customers;
     return customers.filter((c) => c.name.toLowerCase().includes(q) || c.phone?.toLowerCase().includes(q));
   }, [customers, search]);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllFiltered() {
+    setSelectedIds((prev) => {
+      const allSelected = filtered.length > 0 && filtered.every((c) => prev.has(c.id));
+      if (allSelected) return new Set();
+      return new Set(filtered.map((c) => c.id));
+    });
+  }
+
+  async function exportCredit(scope: 'all' | 'selected') {
+    setExporting(true);
+    try {
+      const ids = scope === 'selected' ? [...selectedIds] : undefined;
+      const res = await api.get('/exports/customer-credit', {
+        params: ids?.length ? { customerIds: ids.join(',') } : undefined,
+        responseType: 'blob',
+      });
+      const label = scope === 'selected' ? `Selected_${ids!.length}` : 'All';
+      downloadBlob(res.data, `Sochebar_Customer_Credit_${label}.xlsx`);
+      push('Exported');
+    } catch (err) {
+      push(errorMessage(err), 'error');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function openNewCustomer() {
     setEditingCustomer(null);
@@ -112,6 +151,7 @@ export function CustomersPage() {
     setPaymentAmount('');
     setBillPaymentMethod('CASH');
     setComment('');
+    setBillDate(today);
     setHistory([]);
     setSelectedHistoryEntry(null);
     try {
@@ -156,8 +196,9 @@ export function CustomersPage() {
           })),
         manualTotal: items.length === 0 ? Number(manualTotal) : undefined,
         payments: [{ paymentMethod: 'CREDIT', amount: billTotal, comment: comment.trim() || undefined }],
+        saleDate: billDate !== today ? billDate : undefined,
       });
-      push('Bill added to tab');
+      push(billDate !== today ? `Bill backdated to ${billDate}` : 'Bill added to tab');
       setTxnTarget(null);
       load();
     } catch (err) {
@@ -207,22 +248,61 @@ export function CustomersPage() {
         </div>
       </div>
 
-      <div className="relative max-w-sm">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-paper-dim" />
-        <Input placeholder="Search customers…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="relative max-w-sm flex-1 min-w-[200px]">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-paper-dim" />
+          <Input placeholder="Search customers…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        </div>
+        {canEdit && (
+          <div className="flex items-center gap-2">
+            {selectedIds.size > 0 && (
+              <Button variant="secondary" onClick={() => exportCredit('selected')} disabled={exporting}>
+                <span className="flex items-center gap-1.5">
+                  <Download size={14} /> Export selected ({selectedIds.size})
+                </span>
+              </Button>
+            )}
+            <Button variant="secondary" onClick={() => exportCredit('all')} disabled={exporting}>
+              <span className="flex items-center gap-1.5">
+                <Download size={14} /> {exporting ? 'Exporting…' : 'Export all to Excel'}
+              </span>
+            </Button>
+          </div>
+        )}
       </div>
 
       <Card>
+        {canEdit && filtered.length > 0 && (
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-panel-border">
+            <input
+              type="checkbox"
+              checked={filtered.length > 0 && filtered.every((c) => selectedIds.has(c.id))}
+              onChange={toggleSelectAllFiltered}
+              className="accent-brass"
+            />
+            <span className="text-xs text-paper-dim">Select all {search ? 'matching' : ''} customers to export</span>
+          </div>
+        )}
         {filtered.map((c) => (
           <div key={c.id} className="ledger-row flex items-center justify-between px-4 py-3">
-            <button
-              className="text-left"
-              onClick={() => canEdit && openEditCustomer(c)}
-              disabled={!canEdit}
-            >
-              <div className="text-sm text-paper">{c.name}</div>
-              <div className="text-xs text-paper-dim">{c.phone ?? '—'} · limit {formatMWK(c.creditLimit)}</div>
-            </button>
+            <div className="flex items-center gap-3 min-w-0">
+              {canEdit && (
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(c.id)}
+                  onChange={() => toggleSelected(c.id)}
+                  className="accent-brass shrink-0"
+                />
+              )}
+              <button
+                className="text-left min-w-0"
+                onClick={() => canEdit && openEditCustomer(c)}
+                disabled={!canEdit}
+              >
+                <div className="text-sm text-paper">{c.name}</div>
+                <div className="text-xs text-paper-dim">{c.phone ?? '—'} · limit {formatMWK(c.creditLimit)}</div>
+              </button>
+            </div>
             <div className="flex items-center gap-3">
               <div className="text-right">
                 <div className="text-xs text-paper-dim">Owes</div>
@@ -336,6 +416,15 @@ export function CustomersPage() {
 
           {mode === 'BILL' ? (
             <div className="space-y-3">
+              <div>
+                <Label>Date this bill was taken</Label>
+                <Input type="date" value={billDate} max={today} onChange={(e) => setBillDate(e.target.value)} />
+                {billDate !== today && (
+                  <p className="text-xs text-brass bg-brass/10 border border-brass/30 rounded-md px-3 py-2 mt-2">
+                    Recording this bill for {billDate} — it'll show and filter under that day's records, not today's.
+                  </p>
+                )}
+              </div>
               <div>
                 <Label>Items (optional — leave blank to just enter a total)</Label>
                 <div className="space-y-2">

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Minus, Trash2, X } from 'lucide-react';
+import { v4 as uuid } from 'uuid';
 import { api } from '../../lib/api';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -135,6 +136,16 @@ export function PosPage() {
 
   async function createCustomerInline() {
     if (!newCustomerForm.name.trim() || newCustomerForIdx === null) return;
+    if (!navigator.onLine) {
+      // A new customer needs a real server-issued id before we can attach
+      // credit payments to them — queuing this offline and back-filling
+      // the id later would mean the sale we're about to record points at
+      // a customer that doesn't exist yet. Simplest safe rule: new
+      // customers need a connection; use an existing customer or CASH for
+      // this sale, then add them once you're back online.
+      push('Adding a new customer needs a connection. Use an existing customer or cash for now.', 'error');
+      return;
+    }
     setCreatingCustomer(true);
     try {
       const { data } = await api.post('/customers', {
@@ -155,7 +166,14 @@ export function PosPage() {
   async function completeSale() {
     setSubmitting(true);
     try {
-      await api.post('/sales', {
+      const wasOnline = navigator.onLine;
+      const { data } = await api.post('/sales', {
+        // Belt-and-suspenders alongside the generic Idempotency-Key header
+        // in api.ts: the backend's Sale model already has a unique
+        // clientSaleId constraint, so even a raw retry of this exact
+        // request (offline queue replay, or a response that got lost in
+        // transit) can never record the same sale twice.
+        clientSaleId: uuid(),
         items: cart.map((l) => ({
           productId: l.productId,
           unitId: l.unitId,
@@ -172,7 +190,14 @@ export function PosPage() {
           })),
         saleDate: saleDate !== today ? saleDate : undefined,
       });
-      push(saleDate !== today ? `Backdated sale recorded for ${saleDate}` : 'Sale completed');
+      const wasQueued = !wasOnline || data?.__offlineQueued;
+      push(
+        wasQueued
+          ? 'Offline — sale saved on this device, will sync automatically'
+          : saleDate !== today
+            ? `Backdated sale recorded for ${saleDate}`
+            : 'Sale completed',
+      );
       setCart([]);
       setCheckoutOpen(false);
       setSaleDate(today);

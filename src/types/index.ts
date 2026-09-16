@@ -1,4 +1,11 @@
-export type RoleName = 'ADMIN' | 'MANAGER' | 'CASHIER' | 'BARTENDER' | 'STOREKEEPER';
+export type RoleName =
+  | 'ADMIN'
+  | 'MANAGER'
+  | 'CASHIER'
+  | 'BARTENDER'
+  | 'STOREKEEPER'
+  | 'VIEWER'
+  | 'SYNC_DEVICE';
 
 export interface AuthUser {
   id: string;

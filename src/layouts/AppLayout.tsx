@@ -28,19 +28,19 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER'] },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'VIEWER'] },
   { to: '/pos', label: 'POS', icon: ShoppingCart, roles: ['ADMIN', 'MANAGER', 'CASHIER', 'BARTENDER'] },
   { to: '/sales', label: 'Sales', icon: Receipt },
-  { to: '/products', label: 'Products', icon: Package, roles: ['ADMIN', 'MANAGER'] },
-  { to: '/inventory', label: 'Inventory', icon: Boxes, roles: ['ADMIN', 'MANAGER', 'STOREKEEPER'] },
-  { to: '/purchases', label: 'Purchases', icon: Truck, roles: ['ADMIN', 'MANAGER', 'STOREKEEPER'] },
-  { to: '/suppliers', label: 'Suppliers', icon: Truck, roles: ['ADMIN', 'MANAGER'] },
+  { to: '/products', label: 'Products', icon: Package, roles: ['ADMIN', 'MANAGER', 'VIEWER'] },
+  { to: '/inventory', label: 'Inventory', icon: Boxes, roles: ['ADMIN', 'MANAGER', 'STOREKEEPER', 'VIEWER'] },
+  { to: '/purchases', label: 'Purchases', icon: Truck, roles: ['ADMIN', 'MANAGER', 'STOREKEEPER', 'VIEWER'] },
+  { to: '/suppliers', label: 'Suppliers', icon: Truck, roles: ['ADMIN', 'MANAGER', 'VIEWER'] },
   { to: '/cash', label: 'Cash', icon: Wallet },
-  { to: '/expenses', label: 'Expenses', icon: CreditCard, roles: ['ADMIN', 'MANAGER'] },
+  { to: '/expenses', label: 'Expenses', icon: CreditCard, roles: ['ADMIN', 'MANAGER', 'VIEWER'] },
   { to: '/customers', label: 'Customers', icon: Users },
-  { to: '/reports', label: 'Reports', icon: FileBarChart, roles: ['ADMIN', 'MANAGER'] },
-  { to: '/accounts', label: 'Accounts', icon: Landmark, roles: ['ADMIN', 'MANAGER'] },
-  { to: '/activity', label: 'Activity', icon: History, roles: ['ADMIN', 'MANAGER'] },
+  { to: '/reports', label: 'Reports', icon: FileBarChart, roles: ['ADMIN', 'MANAGER', 'VIEWER'] },
+  { to: '/accounts', label: 'Accounts', icon: Landmark, roles: ['ADMIN', 'MANAGER', 'VIEWER'] },
+  { to: '/activity', label: 'Activity', icon: History, roles: ['ADMIN', 'MANAGER', 'VIEWER'] },
   { to: '/users', label: 'Users', icon: UserCog, roles: ['ADMIN'] },
 ];
 

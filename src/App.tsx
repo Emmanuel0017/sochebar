@@ -29,7 +29,7 @@ export default function App() {
 
             <Route element={<RequireAuth />}>
               <Route element={<AppLayout />}>
-                <Route element={<RequireRole roles={['ADMIN', 'MANAGER']} />}>
+                <Route element={<RequireRole roles={['ADMIN', 'MANAGER', 'VIEWER']} />}>
                   <Route path="/" element={<DashboardPage />} />
                 </Route>
 
@@ -44,7 +44,7 @@ export default function App() {
                 <Route path="/cash" element={<CashPage />} />
                 <Route path="/customers" element={<CustomersPage />} />
 
-                <Route element={<RequireRole roles={['ADMIN', 'MANAGER']} />}>
+                <Route element={<RequireRole roles={['ADMIN', 'MANAGER', 'VIEWER']} />}>
                   <Route path="/products" element={<ProductsPage />} />
                   <Route path="/purchases" element={<PurchasesPage />} />
                   <Route path="/suppliers" element={<SuppliersPage />} />
@@ -54,7 +54,7 @@ export default function App() {
                   <Route path="/activity" element={<ActivityPage />} />
                 </Route>
 
-                <Route element={<RequireRole roles={['ADMIN', 'MANAGER', 'STOREKEEPER']} />}>
+                <Route element={<RequireRole roles={['ADMIN', 'MANAGER', 'STOREKEEPER', 'VIEWER']} />}>
                   <Route path="/inventory" element={<InventoryPage />} />
                 </Route>
 
